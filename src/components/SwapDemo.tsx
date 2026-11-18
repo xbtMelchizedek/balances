@@ -17,6 +17,11 @@ import {
 } from "../lib/mockProvider";
 import { DEMO_BALANCES, PRESETS, tokenById } from "../lib/tokens";
 import type { Quote, Token, TradeError } from "../lib/types";
+import { Badge } from "@/components/arc/badge/badge";
+import { Button } from "@/components/arc/button/button";
+import SegmentedControl from "@/components/arc/segmented-control/segmented-control";
+import { Switch } from "@/components/arc/switch/switch";
+import Toast from "@/components/arc/toast/toast";
 import { ApprovalStepper, type ApprovalMode, type ApprovalStep } from "./ApprovalStepper";
 import { ErrorState } from "./ErrorState";
 import { QuoteCard } from "./QuoteCard";
@@ -49,6 +54,8 @@ export function SwapDemo({
   const [tx, setTx] = useState<TxPhase | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [limit, setLimit] = useState(false);
+  const [toast, setToast] = useState<{ title: string; description?: string } | null>(null);
+
 
   const band = pairLiquidity(sell.liquidity, buy.liquidity);
   const effectiveBps = slipMode === "auto" ? autoSlippageBps(band).bps : slipBps;
@@ -242,6 +249,10 @@ export function SwapDemo({
     if (blocking || stale || !quote) return;
     if (!connected) {
       setConnected(true);
+      setToast({
+        title: "Demo wallet connected",
+        description: "No real wallet was used.",
+      });
       return;
     }
     if (!gasless && !approved) {
@@ -251,7 +262,13 @@ export function SwapDemo({
     setStage("progress");
     setTx("submitted");
     window.setTimeout(() => setTx("pending"), 400);
-    window.setTimeout(() => setTx("confirmed"), 1400);
+    window.setTimeout(() => {
+      setTx("confirmed");
+      setToast({
+        title: "Order placed (DEMO)",
+        description: "Nothing was signed or broadcast.",
+      });
+    }, 1400);
   }
 
   const primaryLabel = !connected
@@ -272,9 +289,11 @@ export function SwapDemo({
   return (
     <div className="swap" data-testid="swap-demo">
       <header className="hero">
-        <p className="eyebrow">
-          <span className="demo-badge">DEMO</span> No wallet signing · no real
-          transactions
+        <p className="hero__meta">
+          <Badge tone="info" size="sm">
+            DEMO
+          </Badge>
+          <span>No wallet signing · no real transactions</span>
         </p>
         <h1>balances</h1>
         <p className="lede">
@@ -308,26 +327,15 @@ export function SwapDemo({
 
       <div className="module">
         <div className="module__bar">
-          <div className="seg" role="tablist" aria-label="Order type">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!limit}
-              className={!limit ? "seg__btn is-on" : "seg__btn"}
-              onClick={() => setLimit(false)}
-            >
-              Market
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={limit}
-              className={limit ? "seg__btn is-on" : "seg__btn"}
-              onClick={() => setLimit(true)}
-            >
-              Limit
-            </button>
-          </div>
+          <SegmentedControl
+            label="Order type"
+            value={limit ? "limit" : "market"}
+            onValueChange={(value) => setLimit(value === "limit")}
+            options={[
+              { value: "market", label: "Market" },
+              { value: "limit", label: "Limit" },
+            ]}
+          />
           <SlippageControl
             mode={slipMode}
             bps={slipBps}
@@ -354,14 +362,17 @@ export function SwapDemo({
           testId="token-select-pay"
         />
 
-        <button
-          type="button"
-          className="flip"
-          onClick={flip}
-          aria-label="Switch pay-with and receive tokens"
-        >
-          ⇅
-        </button>
+        <div className="flip">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={flip}
+            aria-label="Switch pay-with and receive tokens"
+          >
+            Flip tokens
+          </Button>
+        </div>
 
         <TokenSelect
           label="You receive"
@@ -390,19 +401,16 @@ export function SwapDemo({
           </div>
         )}
 
-        <label className="ack ack--inline">
-          <input
-            type="checkbox"
+        <div className="ack ack--inline">
+          <Switch
             checked={gasless}
-            onChange={(e) => {
-              setGasless(e.target.checked);
+            onCheckedChange={(checked) => {
+              setGasless(checked);
               setApproved(false);
             }}
+            label="Auto (gasless, DEMO). Approval and swap are one simulated signature. Standard mode adds a one-time approve step. Spender would be Permit2 or AllowanceHolder, never Settler."
           />
-          Auto (gasless, DEMO) — approval and swap are one simulated signature.
-          Standard mode adds a one-time approve step. Spender would be Permit2
-          or AllowanceHolder, never Settler.
-        </label>
+        </div>
 
         {quote && !stale && (
           <QuoteCard quote={quote} slippageBps={effectiveBps} />
@@ -438,14 +446,20 @@ export function SwapDemo({
 
         {stage === "progress" && tx && <TxProgress phase={tx} />}
 
-        <button
+        <Button
           type="button"
-          className="btn btn--primary btn--block"
+          variant="primary"
+          size="lg"
+          className="primary-action"
           data-testid="primary-action"
           disabled={primaryDisabled || stage === "progress"}
           onClick={() => {
             if (!connected) {
               setConnected(true);
+              setToast({
+                title: "Demo wallet connected",
+                description: "No real wallet was used.",
+              });
               return;
             }
             if (stage !== "review") {
@@ -456,11 +470,12 @@ export function SwapDemo({
           }}
         >
           {primaryLabel}
-        </button>
+        </Button>
         {stage === "review" && !stale && (
-          <button
+          <Button
             type="button"
-            className="btn btn--ghost btn--block"
+            variant="ghost"
+            className="secondary-action"
             data-testid="expire-quote"
             onClick={() => {
               if (!quote) return;
@@ -468,9 +483,21 @@ export function SwapDemo({
             }}
           >
             Expire quote now (DEMO)
-          </button>
+          </Button>
         )}
       </div>
+      {toast ? (
+        <div className="toast-slot">
+          <Toast
+            title={toast.title}
+            description={toast.description}
+            open
+            onOpenChange={(next) => {
+              if (!next) setToast(null);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

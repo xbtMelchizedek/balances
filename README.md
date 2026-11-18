@@ -40,6 +40,13 @@ Reusable components:
 The quote provider is **mock only**. The live 0x Swap API requires an API key,
 so this kit does not call it.
 
+The visual language uses the free, MIT-licensed core of [Arc UI](https://uiarc.dev)
+(button, dialog, select, search field, tooltip, toast, switch, checkbox, alert,
+badge, popover, segmented control, and stepper). Tokens, motion, and reduced-motion
+branches come from that core. No Arc Pro components are included. Arc's copyright
+notice is in `src/components/arc/LICENSE` and `NOTICE`.
+
+
 ## Run it
 
 ```bash

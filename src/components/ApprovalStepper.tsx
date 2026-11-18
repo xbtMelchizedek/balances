@@ -1,3 +1,5 @@
+import { Stepper } from "@/components/arc/stepper/stepper";
+
 export type ApprovalStep = "connect" | "approve" | "place" | "done";
 export type ApprovalMode = "auto" | "standard";
 
@@ -5,7 +7,6 @@ export function ApprovalStepper({
   mode,
   step,
   sellSymbol,
-  connected,
 }: {
   mode: ApprovalMode;
   step: ApprovalStep;
@@ -30,31 +31,20 @@ export function ApprovalStepper({
           { id: "place", label: "Place order (DEMO)" },
         ];
 
-  const currentIndex = steps.findIndex((s) => s.id === step);
+  const current =
+    step === "done"
+      ? steps.length
+      : Math.max(0, steps.findIndex((s) => s.id === step));
 
   return (
-    <ol className="stepper" data-testid="approval-stepper">
-      {steps.map((s, i) => {
-        const state =
-          !connected && s.id !== "connect"
-            ? "todo"
-            : s.id === step
-              ? "current"
-              : currentIndex > i || step === "done"
-                ? "done"
-                : "todo";
-        return (
-          <li key={s.id} className={`stepper__item is-${state}`}>
-            <span className="stepper__idx" aria-hidden="true">
-              {state === "done" ? "✓" : i + 1}
-            </span>
-            <span>
-              {s.label}
-              {state === "current" ? " (current)" : ""}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="approval-stepper" data-testid="approval-stepper">
+      <Stepper
+        steps={steps}
+        current={current}
+        orientation="vertical"
+        details="all"
+        label="Approval steps"
+      />
+    </div>
   );
 }
