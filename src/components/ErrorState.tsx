@@ -1,4 +1,14 @@
+import { Alert } from "@/components/arc/alert/alert";
+import { Button } from "@/components/arc/button/button";
 import type { TradeError } from "../lib/types";
+
+const DANGER: TradeError["kind"][] = [
+  "insufficient-balance",
+  "fees-exceed-trade",
+  "quote-expired",
+  "high-impact",
+  "unverified-token",
+];
 
 export function ErrorState({
   error,
@@ -7,18 +17,19 @@ export function ErrorState({
   error: TradeError;
   onAction?: () => void;
 }) {
+  const tone = DANGER.includes(error.kind) ? "danger" : "warning";
   return (
     <div
       className={`error-state error-state--${error.kind}`}
-      role="alert"
       data-testid="error-state"
     >
-      <p className="error-state__title">{error.title}</p>
-      <p className="error-state__detail">{error.detail}</p>
+      <Alert tone={tone} title={error.title}>
+        {error.detail}
+      </Alert>
       {error.action && onAction ? (
-        <button type="button" className="btn btn--ghost" onClick={onAction}>
+        <Button type="button" variant="ghost" onClick={onAction}>
           {error.action}
-        </button>
+        </Button>
       ) : error.action ? (
         <p className="error-state__hint">{error.action}</p>
       ) : null}

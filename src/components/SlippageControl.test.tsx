@@ -18,7 +18,7 @@ describe("SlippageControl", () => {
     );
     await user.click(screen.getByTestId("slippage-toggle"));
     expect(screen.getByText(/Auto picked 0.5%/)).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Manual" }));
+    await user.click(screen.getByRole("button", { name: "Manual" }));
     expect(onChange).toHaveBeenCalledWith({
       mode: "manual",
       bps: 50n,

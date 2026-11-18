@@ -1,0 +1,4 @@
+This repository includes the free (MIT) core of Arc UI
+(https://uiarc.dev), Copyright (c) 2026 Elia Kuratli. The vendored
+source lives in src/components/arc/ and keeps its original license
+in src/components/arc/LICENSE. No Arc Pro components are included.

@@ -1,4 +1,14 @@
 import { useId, useState } from "react";
+import { Button } from "@/components/arc/button/button";
+import { Checkbox } from "@/components/arc/checkbox/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/arc/popover/popover";
+import SegmentedControl from "@/components/arc/segmented-control/segmented-control";
+import { Tooltip } from "@/components/arc/tooltip/tooltip";
+import { Settings } from "lucide-react";
 import {
   DEFAULT_SLIPPAGE_BPS,
   autoSlippageBps,
@@ -30,7 +40,6 @@ export function SlippageControl({
     ackHigh: boolean;
   }) => void;
 }) {
-  const headingId = useId();
   const customId = useId();
   const auto = autoSlippageBps(band);
   const [open, setOpen] = useState(false);
@@ -51,30 +60,33 @@ export function SlippageControl({
 
   return (
     <div className="slippage" data-testid="slippage-control">
-      <button
-        type="button"
-        className="icon-btn"
-        aria-expanded={open}
-        aria-controls={headingId}
-        aria-label={`Trade settings, max slippage ${formatBpsAsPercent(shownBps)}`}
-        onClick={() => setOpen((v) => !v)}
-        data-testid="slippage-toggle"
-      >
-        <SettingsIcon />
-        <span className="icon-btn__meta">{formatBpsAsPercent(shownBps)}</span>
-      </button>
-      {open && (
-        <div
-          className="slippage__panel"
-          id={headingId}
-          role="region"
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip content={`Trade settings, max slippage ${formatBpsAsPercent(shownBps)}`}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={open}
+              aria-label={`Trade settings, max slippage ${formatBpsAsPercent(shownBps)}`}
+              data-testid="slippage-toggle"
+            >
+              <Settings width={18} height={18} aria-hidden="true" />
+              {formatBpsAsPercent(shownBps)}
+            </Button>
+          </PopoverTrigger>
+        </Tooltip>
+        <PopoverContent
+          align="end"
           aria-label="Trade settings"
+          className="slippage__panel"
         >
           <div className="slippage__row">
             <p className="slippage__label">Max slippage</p>
-            <button
+            <Button
               type="button"
-              className="btn btn--ghost btn--small"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 onChange({
                   mode: "auto",
@@ -85,32 +97,23 @@ export function SlippageControl({
               }}
             >
               Use defaults
-            </button>
+            </Button>
           </div>
-          <div className="seg" role="radiogroup" aria-label="Slippage mode">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={mode === "auto"}
-              className={mode === "auto" ? "seg__btn is-on" : "seg__btn"}
-              onClick={() =>
-                onChange({ mode: "auto", bps: auto.bps, ackHigh: false })
+          <SegmentedControl
+            label="Slippage mode"
+            value={mode}
+            onValueChange={(value) => {
+              if (value === "auto") {
+                onChange({ mode: "auto", bps: auto.bps, ackHigh: false });
+              } else {
+                onChange({ mode: "manual", bps, ackHigh: false });
               }
-            >
-              Auto
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={mode === "manual"}
-              className={mode === "manual" ? "seg__btn is-on" : "seg__btn"}
-              onClick={() =>
-                onChange({ mode: "manual", bps, ackHigh: false })
-              }
-            >
-              Manual
-            </button>
-          </div>
+            }}
+            options={[
+              { value: "auto", label: "Auto" },
+              { value: "manual", label: "Manual" },
+            ]}
+          />
           {mode === "auto" ? (
             <p className="slippage__note">
               Auto picked {formatBpsAsPercent(auto.bps)} for this pair
@@ -124,9 +127,7 @@ export function SlippageControl({
                 <button
                   key={p.toString()}
                   type="button"
-                  className={
-                    bps === p ? "chip chip--on" : "chip"
-                  }
+                  className={bps === p ? "chip chip--on" : "chip"}
                   onClick={() => applyManual(p)}
                 >
                   {formatBpsAsPercent(p)}
@@ -157,36 +158,25 @@ export function SlippageControl({
             </p>
           )}
           {needsAck && (
-            <label className="ack">
-              <input
-                type="checkbox"
-                checked={ackHigh}
-                onChange={(e) =>
-                  onChange({ mode, bps: shownBps, ackHigh: e.target.checked })
-                }
-                data-testid="slippage-ack"
-              />
-              I understand I may receive at least{" "}
-              {formatBpsAsPercent(shownBps)} less than the quote.
-            </label>
+            <Checkbox
+              checked={ackHigh}
+              onCheckedChange={(checked) =>
+                onChange({
+                  mode,
+                  bps: shownBps,
+                  ackHigh: checked === true,
+                })
+              }
+              data-testid="slippage-ack"
+              label={`I understand I may receive at least ${formatBpsAsPercent(shownBps)} less than the quote.`}
+            />
           )}
           <p className="slippage__note">
             Manual default is {formatBpsAsPercent(DEFAULT_SLIPPAGE_BPS)}. Gas
             is simulated as Fast in this demo.
           </p>
-        </div>
-      )}
+        </PopoverContent>
+      </Popover>
     </div>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M7.2 1.5h3.6l.4 1.7a5.8 5.8 0 0 1 1.5.9l1.7-.5 1.8 3.1-1.3 1.2c.1.5.1 1 0 1.5l1.3 1.2-1.8 3.1-1.7-.5a5.8 5.8 0 0 1-1.5.9l-.4 1.7H7.2l-.4-1.7a5.8 5.8 0 0 1-1.5-.9l-1.7.5-1.8-3.1 1.3-1.2a5.8 5.8 0 0 1 0-1.5L1.8 7.7 3.6 4.6l1.7.5a5.8 5.8 0 0 1 1.5-.9l.4-1.7ZM9 7.2A1.8 1.8 0 1 0 9 10.8 1.8 1.8 0 0 0 9 7.2Z"
-      />
-    </svg>
   );
 }

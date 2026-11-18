@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { SwapDemo } from "./SwapDemo";
@@ -43,3 +43,18 @@ describe("SwapDemo", () => {
     expect(screen.getByTestId("token-select-receive")).toHaveTextContent("LOAVES");
   });
 });
+
+  it("returns focus to the token opener after Escape closes the picker", async () => {
+    const user = userEvent.setup();
+    render(<SwapDemo />);
+    const opener = screen.getByTestId("token-select-pay-opener");
+    await user.click(opener);
+    expect(await screen.findByTestId("token-search")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("token-search")).toBeNull();
+    });
+    await waitFor(() => {
+      expect(opener).toHaveFocus();
+    });
+  });

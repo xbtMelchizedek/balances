@@ -1,3 +1,5 @@
+import { Alert } from "@/components/arc/alert/alert";
+import { Button } from "@/components/arc/button/button";
 import { countdownLabel } from "../lib/format";
 import { isQuoteStale, remainingMs } from "../lib/quoteMath";
 import { useEffect, useState } from "react";
@@ -49,22 +51,23 @@ export function StaleQuote({
     );
   }
   return (
-    <div className="stale-banner" role="alert" data-testid="stale-banner">
-      <div>
-        <p className="stale-banner__title">This quote has expired</p>
-        <p className="stale-banner__detail">
-          Firm quotes last 20 seconds. Refresh to get a new price before you
-          place the order. The previous number is no longer valid.
-        </p>
-      </div>
-      <button
+    <div className="stale-banner">
+      <Alert
+        tone="danger"
+        title="This quote has expired"
+        data-testid="stale-banner"
+      >
+        Firm quotes last 20 seconds. Refresh to get a new price before you
+        place the order. The previous number is no longer valid.
+      </Alert>
+      <Button
         type="button"
-        className="btn btn--primary"
+        variant="primary"
         onClick={onRefresh}
         data-testid="refresh-quote"
       >
         Refresh quote
-      </button>
+      </Button>
     </div>
   );
 }
