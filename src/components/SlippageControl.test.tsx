@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SlippageControl } from "./SlippageControl";
@@ -56,5 +56,30 @@ describe("SlippageControl", () => {
       bps: 500n,
       ackHigh: true,
     });
+  });
+
+  it("closes from the close button and on Escape, and returns focus", async () => {
+    const user = userEvent.setup();
+    render(
+      <SlippageControl
+        mode="auto"
+        bps={50n}
+        band="major"
+        ackHigh={false}
+        onChange={() => {}}
+      />,
+    );
+    const toggle = screen.getByTestId("slippage-toggle");
+    await user.click(toggle);
+    expect(screen.getByRole("dialog", { name: "Trade settings" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close trade settings" }));
+    expect(screen.queryByRole("dialog", { name: "Trade settings" })).toBeNull();
+    expect(toggle).toHaveFocus();
+
+    await user.click(toggle);
+    const dialog = screen.getByRole("dialog", { name: "Trade settings" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Trade settings" })).toBeNull();
+    expect(toggle).toHaveFocus();
   });
 });

@@ -26,6 +26,7 @@ export function TokenSelect({
   const [ackUnverified, setAckUnverified] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const searchId = useId();
   const titleId = useId();
   const results = searchTokens(query, chain);
@@ -36,6 +37,10 @@ export function TokenSelect({
     if (!el) return;
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
+    if (open) {
+      // Native dialogs already trap focus; move it to the search field.
+      queueMicrotask(() => searchRef.current?.focus());
+    }
   }, [open]);
 
   function close() {
@@ -112,6 +117,7 @@ export function TokenSelect({
           Search
           <input
             id={searchId}
+            ref={searchRef}
             data-testid="token-search"
             value={query}
             placeholder="Name, symbol, or demo address"

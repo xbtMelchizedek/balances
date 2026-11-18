@@ -226,7 +226,10 @@ body {
 .error-state--fees-exceed-trade,
 .error-state--quote-expired,
 .error-state--high-impact,
-.error-state--unverified-token { border-color: var(--danger); background: #2a1b14; }
+.error-state--unverified-token,
+.error-state--network-mismatch,
+.error-state--price-updated,
+.error-state--limit-worse { border-color: var(--danger); background: #2a1b14; }
 
 .stepper { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 8px; }
 .stepper__item { display: flex; gap: 10px; align-items: center; color: var(--muted); }
@@ -248,17 +251,15 @@ body {
 
 .slippage { position: relative; }
 .slippage__panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  width: min(360px, 86vw);
+  width: min(360px, 92vw);
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 14px;
-  z-index: 5;
+  color: var(--ink);
   box-shadow: var(--shadow);
 }
+.slippage__panel::backdrop { background: rgba(8, 6, 4, 0.7); }
 .slippage__row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .slippage__label { margin: 0; font-weight: 650; }
 .slippage__presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
@@ -329,7 +330,27 @@ body {
   margin: 6px 0 8px;
 }
 
-.limit-row { margin: 8px 0; color: var(--muted); font-size: 0.9rem; }
+.limit-row { margin: 8px 0; color: var(--muted); font-size: 0.9rem; display: grid; gap: 8px; }
+.limit-row__mid { margin: 0; }
+.limit-row__field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+.limit-row__field input {
+  flex: 1;
+  min-width: 8rem;
+  min-height: 44px;
+  background: var(--bg-mute);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: inherit;
+}
+.warn-copy--danger { color: var(--danger); }
 
 footer.colophon { margin-top: 36px; color: var(--muted); font-size: 0.85rem; }
 footer.colophon a { color: var(--gold); }
@@ -338,6 +359,6 @@ footer.colophon a { color: var(--gold); }
   #root { padding: 20px 12px 64px; }
   .hero h1 { font-size: 2.3rem; }
   .stale-banner { flex-direction: column; }
-  .slippage__panel { position: fixed; left: 12px; right: 12px; width: auto; top: auto; bottom: 12px; }
+  .slippage__panel { width: min(360px, 92vw); }
   .token-field__amount { font-size: 1.3rem; }
 }

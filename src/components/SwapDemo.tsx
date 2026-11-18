@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  DEMO_REFRESH_ADVERSE_BPS,
+  isLimitWorseThanMarket,
+  isWorseQuote,
+  needsNetworkSwitch,
+} from "../lib/behavior";
 import { formatUnits, parseUnits } from "../lib/format";
 import {
   DEFAULT_SLIPPAGE_BPS,
@@ -14,11 +20,15 @@ import {
   feesExceedTrade,
   getMockQuote,
   quoteError,
+  sellAmountForBuyTarget,
 } from "../lib/mockProvider";
-import { DEMO_BALANCES, PRESETS, tokenById } from "../lib/tokens";
-import type { Quote, Token, TradeError } from "../lib/types";
+import { CHAIN_LABEL, DEMO_BALANCES, PRESETS, tokenById } from "../lib/tokens";
+import type { ChainId, Quote, Token, TradeError } from "../lib/types";
 import { ApprovalStepper, type ApprovalMode, type ApprovalStep } from "./ApprovalStepper";
 import { ErrorState } from "./ErrorState";
+import { LimitPanel } from "./LimitPanel";
+import { NetworkSwitch } from "./NetworkSwitch";
+import { PriceUpdateBanner } from "./PriceUpdateBanner";
 import { QuoteCard } from "./QuoteCard";
 import { SlippageControl, type SlippageMode } from "./SlippageControl";
 import { StaleQuote, useQuoteClock } from "./StaleQuote";
@@ -31,38 +41,94 @@ const hype = tokenById("hype")!;
 export function SwapDemo({
   nowFn = Date.now,
   ttlMs = QUOTE_TTL_MS,
+  refreshAdverseBps = DEMO_REFRESH_ADVERSE_BPS,
 }: {
   nowFn?: () => number;
   ttlMs?: number;
+  refreshAdverseBps?: bigint;
 }) {
   const [sell, setSell] = useState<Token>(flop);
   const [buy, setBuy] = useState<Token>(hype);
   const [sellInput, setSellInput] = useState("25");
+  const [buyInput, setBuyInput] = useState("");
+  const [lastEdited, setLastEdited] = useState<"pay" | "receive">("pay");
   const [slipMode, setSlipMode] = useState<SlippageMode>("auto");
   const [slipBps, setSlipBps] = useState<bigint>(DEFAULT_SLIPPAGE_BPS);
   const [ackHigh, setAckHigh] = useState(false);
   const [ackUnverified, setAckUnverified] = useState(false);
+  const [ackLimitWorse, setAckLimitWorse] = useState(false);
+  const [limitBuyInput, setLimitBuyInput] = useState("");
+  const [limitTouched, setLimitTouched] = useState(false);
   const [gasless, setGasless] = useState(true);
   const [connected, setConnected] = useState(false);
   const [approved, setApproved] = useState(false);
+  const [walletChain, setWalletChain] = useState<ChainId>("flop");
   const [stage, setStage] = useState<"edit" | "review" | "progress">("edit");
   const [tx, setTx] = useState<TxPhase | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [limit, setLimit] = useState(false);
+  const [reviewedBuyAmount, setReviewedBuyAmount] = useState<bigint | null>(
+    null,
+  );
+  const [needsReReview, setNeedsReReview] = useState(false);
 
   const band = pairLiquidity(sell.liquidity, buy.liquidity);
   const effectiveBps = slipMode === "auto" ? autoSlippageBps(band).bps : slipBps;
   const sellAmount = parseUnits(sellInput, sell.decimals);
+  const receiveAmount = parseUnits(buyInput, buy.decimals);
   const balance = DEMO_BALANCES[sell.id] ?? 0n;
+  const switchTo = connected ? needsNetworkSwitch(walletChain, sell, buy) : null;
 
-  const requestReady = sellAmount !== null && sellAmount > 0n && sell.id !== buy.id;
+  const requestReady =
+    lastEdited === "receive"
+      ? receiveAmount !== null && receiveAmount > 0n && sell.id !== buy.id
+      : sellAmount !== null && sellAmount > 0n && sell.id !== buy.id;
 
   useEffect(() => {
-    if (!requestReady || sellAmount === null) {
+    if (!requestReady) {
       setQuote(null);
       return;
     }
     const firm = stage === "review";
+    // Indicative and first firm quotes are clean. An expired refresh passes
+    // refreshAdverseBps explicitly in refreshQuote, not through this effect.
+
+    if (lastEdited === "receive") {
+      if (receiveAmount === null || receiveAmount <= 0n) {
+        setQuote(null);
+        return;
+      }
+      const inverted = sellAmountForBuyTarget({
+        sellToken: sell,
+        buyToken: buy,
+        targetBuyAmount: receiveAmount,
+        firm,
+        nowMs: nowFn(),
+        ttlMs,
+      });
+      if (inverted === null) {
+        setQuote(null);
+        return;
+      }
+      const formatted = formatUnits(inverted, sell.decimals);
+      setSellInput((prev) => (prev === formatted ? prev : formatted));
+      setQuote(
+        getMockQuote({
+          sellToken: sell,
+          buyToken: buy,
+          sellAmount: inverted,
+          firm,
+          nowMs: nowFn(),
+          ttlMs,
+        }),
+      );
+      return;
+    }
+
+    if (sellAmount === null || sellAmount <= 0n) {
+      setQuote(null);
+      return;
+    }
     const next = getMockQuote({
       sellToken: sell,
       buyToken: buy,
@@ -72,21 +138,53 @@ export function SwapDemo({
       ttlMs,
     });
     setQuote(next);
-  }, [sell, buy, sellInput, requestReady, sellAmount, stage, nowFn, ttlMs]);
+    const formattedBuy = formatUnits(next.buyAmount, next.buyToken.decimals);
+    setBuyInput((prev) => (prev === formattedBuy ? prev : formattedBuy));
+  }, [
+    buy,
+    lastEdited,
+    nowFn,
+    receiveAmount,
+    requestReady,
+    sell,
+    sellAmount,
+    stage,
+    ttlMs,
+  ]);
 
   // Reset approval when the sell token changes.
   useEffect(() => {
     setApproved(false);
     setAckUnverified(false);
+    setAckLimitWorse(false);
+    setNeedsReReview(false);
+    setReviewedBuyAmount(null);
     if (stage !== "progress") setStage("edit");
+    // Keep the typed amount; only the pair changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stage reset is a pair-change side effect
   }, [sell.id, buy.id]);
+
+  useEffect(() => {
+    if (quote && limit && !limitTouched) {
+      const mid = formatUnits(quote.midBuyAmount, quote.buyToken.decimals);
+      setLimitBuyInput((prev) => (prev === mid ? prev : mid));
+    }
+  }, [quote, limit, limitTouched]);
 
   const clock = useQuoteClock(quote?.quotedAtMs ?? null, ttlMs, nowFn);
   const stale =
     Boolean(quote && quote.firm && isQuoteStale(clock.nowMs, quote.quotedAtMs, ttlMs));
 
   const error: TradeError | null = useMemo(() => {
-    if (sellAmount === null && sellInput.trim() !== "") {
+    if (switchTo) {
+      return {
+        kind: "network-mismatch",
+        title: `Switch to ${CHAIN_LABEL[switchTo]} network`,
+        detail: `The demo wallet is on ${CHAIN_LABEL[walletChain]}.`,
+        action: `Switch to ${CHAIN_LABEL[switchTo]} network (DEMO)`,
+      };
+    }
+    if (lastEdited === "pay" && sellAmount === null && sellInput.trim() !== "") {
       return {
         kind: "unsupported",
         title: "Check the amount",
@@ -94,7 +192,23 @@ export function SwapDemo({
           "Use a non-negative number with no more decimal places than the token allows.",
       };
     }
-    if (sellAmount === null || sellAmount <= 0n) {
+    if (
+      lastEdited === "receive" &&
+      receiveAmount === null &&
+      buyInput.trim() !== ""
+    ) {
+      return {
+        kind: "unsupported",
+        title: "Check the amount",
+        detail:
+          "Use a non-negative number with no more decimal places than the token allows.",
+      };
+    }
+    if (
+      (lastEdited === "pay" && (sellAmount === null || sellAmount <= 0n)) ||
+      (lastEdited === "receive" &&
+        (receiveAmount === null || receiveAmount <= 0n))
+    ) {
       return quoteError({
         sellToken: sell,
         buyToken: buy,
@@ -104,20 +218,24 @@ export function SwapDemo({
         ttlMs,
       });
     }
+    const resolvedSell = quote?.sellAmount ?? sellAmount ?? 0n;
     const qErr = quoteError({
       sellToken: sell,
       buyToken: buy,
-      sellAmount,
+      sellAmount: resolvedSell,
       firm: false,
       nowMs: 0,
       ttlMs,
     });
     if (qErr) return qErr;
-    if (connected && sellAmount > balance) {
+    if (connected && resolvedSell > balance) {
+      const enteredOnReceive = lastEdited === "receive";
       return {
         kind: "insufficient-balance",
         title: "Insufficient balance",
-        detail: `The demo wallet holds ${formatUnits(balance, sell.decimals)} ${sell.symbol}, which is less than the ${formatUnits(sellAmount, sell.decimals)} ${sell.symbol} you entered. Enter the amount in Pay with so fees are not taken twice.`,
+        detail: enteredOnReceive
+          ? `You entered the amount on You receive. Fees and network cost are taken from ${sell.symbol}, so you need ${formatUnits(resolvedSell, sell.decimals)} ${sell.symbol} to receive that number. The demo wallet holds ${formatUnits(balance, sell.decimals)} ${sell.symbol}. Enter the amount in Pay with if you want the fee taken from a known balance.`
+          : `The demo wallet holds ${formatUnits(balance, sell.decimals)} ${sell.symbol}, which is less than the ${formatUnits(resolvedSell, sell.decimals)} ${sell.symbol} you entered. Enter the amount in Pay with so fees are not taken twice.`,
       };
     }
     if (quote && feesExceedTrade(quote)) {
@@ -148,6 +266,14 @@ export function SwapDemo({
         action: "Refresh quote",
       };
     }
+    if (needsReReview && quote) {
+      return {
+        kind: "price-updated",
+        title: "The price has changed",
+        detail: "Review the new receive amount before placing.",
+        action: "Review updated quote",
+      };
+    }
     if (
       (!buy.verified || !sell.verified) &&
       !ackUnverified &&
@@ -174,21 +300,29 @@ export function SwapDemo({
     ackUnverified,
     balance,
     buy,
+    buyInput,
     connected,
     effectiveBps,
+    lastEdited,
+    needsReReview,
     quote,
+    receiveAmount,
     sell,
     sellAmount,
     sellInput,
     stage,
     stale,
+    switchTo,
     ttlMs,
+    walletChain,
   ]);
 
   const blocking =
     error !== null &&
     error.kind !== "empty" &&
-    !(error.kind === "quote-expired" && stage !== "review");
+    !(error.kind === "quote-expired" && stage !== "review") &&
+    error.kind !== "network-mismatch" &&
+    error.kind !== "price-updated";
 
   const approvalMode: ApprovalMode = gasless ? "auto" : "standard";
   const approvalStep: ApprovalStep = !connected
@@ -213,33 +347,69 @@ export function SwapDemo({
     setBuy(sell);
     if (quote) {
       setSellInput(formatUnits(quote.buyAmount, quote.buyToken.decimals));
+      setLastEdited("pay");
     }
     setStage("edit");
   }
 
   function refreshQuote() {
-    if (sellAmount === null || sellAmount <= 0n) return;
-    setQuote(
-      getMockQuote({
-        sellToken: sell,
-        buyToken: buy,
-        sellAmount,
-        firm: true,
-        nowMs: nowFn(),
-        ttlMs,
-      }),
-    );
+    const amount = quote?.sellAmount ?? sellAmount;
+    if (amount === null || amount <= 0n) return;
+    const next = getMockQuote({
+      sellToken: sell,
+      buyToken: buy,
+      sellAmount: amount,
+      firm: true,
+      nowMs: nowFn(),
+      ttlMs,
+      adverseBps: refreshAdverseBps,
+    });
+    setQuote(next);
+    if (lastEdited === "pay") {
+      setBuyInput(formatUnits(next.buyAmount, next.buyToken.decimals));
+    }
     setStage("review");
+    if (
+      reviewedBuyAmount !== null &&
+      isWorseQuote(reviewedBuyAmount, next.buyAmount)
+    ) {
+      setNeedsReReview(true);
+    } else {
+      setNeedsReReview(false);
+      setReviewedBuyAmount(next.buyAmount);
+    }
   }
 
   function onReview() {
-    if (blocking || !requestReady) return;
+    if (blocking || !requestReady || switchTo) return;
     setStage("review");
-    refreshQuote();
+    if (sellAmount === null && quote === null) return;
+    const amount = quote?.sellAmount ?? sellAmount;
+    if (amount === null || amount <= 0n) return;
+    const next = getMockQuote({
+      sellToken: sell,
+      buyToken: buy,
+      sellAmount: amount,
+      firm: true,
+      nowMs: nowFn(),
+      ttlMs,
+    });
+    setQuote(next);
+    setReviewedBuyAmount(next.buyAmount);
+    setNeedsReReview(false);
+    if (lastEdited === "pay") {
+      setBuyInput(formatUnits(next.buyAmount, next.buyToken.decimals));
+    }
+  }
+
+  function acceptUpdatedQuote() {
+    if (!quote) return;
+    setReviewedBuyAmount(quote.buyAmount);
+    setNeedsReReview(false);
   }
 
   function onPlace() {
-    if (blocking || stale || !quote) return;
+    if (blocking || stale || !quote || needsReReview || switchTo) return;
     if (!connected) {
       setConnected(true);
       return;
@@ -256,18 +426,25 @@ export function SwapDemo({
 
   const primaryLabel = !connected
     ? "Connect demo wallet"
-    : !requestReady || error?.kind === "empty"
-      ? "Enter an amount"
-      : stage !== "review"
-        ? "Review order"
-        : !gasless && !approved
-          ? `Approve ${sell.symbol} (DEMO)`
-          : "Place order (DEMO)";
+    : switchTo
+      ? `Switch to ${CHAIN_LABEL[switchTo]} network (DEMO)`
+      : !requestReady || error?.kind === "empty"
+        ? "Enter an amount"
+        : stage !== "review"
+          ? "Review order"
+          : needsReReview
+            ? "Review updated quote"
+            : !gasless && !approved
+              ? `Approve ${sell.symbol} (DEMO)`
+              : "Place order (DEMO)";
 
   const primaryDisabled =
     (primaryLabel === "Enter an amount") ||
-    (primaryLabel !== "Connect demo wallet" && blocking) ||
-    (stage === "review" && stale);
+    (primaryLabel !== "Connect demo wallet" &&
+      primaryLabel !== `Switch to ${CHAIN_LABEL[switchTo ?? "flop"]} network (DEMO)` &&
+      blocking) ||
+    (stage === "review" && stale) ||
+    (stage === "review" && needsReReview && primaryLabel !== "Review updated quote");
 
   return (
     <div className="swap" data-testid="swap-demo">
@@ -304,6 +481,12 @@ export function SwapDemo({
       <p className="preset-blurb">
         {PRESETS.find((p) => p.sell === sell.id && p.buy === buy.id)?.blurb ??
           "Pick a demo pair, or choose any two tokens from the picker."}
+        {connected && (
+          <>
+            {" "}
+            Demo wallet is on {CHAIN_LABEL[walletChain]}.
+          </>
+        )}
       </p>
 
       <div className="module">
@@ -345,11 +528,17 @@ export function SwapDemo({
           label="Pay with"
           token={sell}
           amount={sellInput}
-          onToken={setSell}
+          onToken={(t) => {
+            setSell(t);
+            setLastEdited("pay");
+          }}
           onAmount={(v) => {
             setSellInput(v);
+            setLastEdited("pay");
             setStage("edit");
             setTx(null);
+            setNeedsReReview(false);
+            setReviewedBuyAmount(null);
           }}
           testId="token-select-pay"
         />
@@ -366,28 +555,36 @@ export function SwapDemo({
         <TokenSelect
           label="You receive"
           token={buy}
-          amount={
-            quote
-              ? formatUnits(quote.buyAmount, quote.buyToken.decimals)
-              : ""
-          }
-          onToken={setBuy}
-          onAmount={() => {
-            /* buy side is quoted, not typed, in this demo */
+          amount={buyInput}
+          onToken={(t) => {
+            setBuy(t);
+          }}
+          onAmount={(v) => {
+            setBuyInput(v);
+            setLastEdited("receive");
+            setStage("edit");
+            setTx(null);
+            setNeedsReReview(false);
+            setReviewedBuyAmount(null);
           }}
           testId="token-select-receive"
-          disabled
         />
 
         {limit && (
-          <div className="limit-row" data-testid="limit-panel">
-            <p>
-              Limit orders in the live Matcha product fill at the exact price
-              you name, expire in 1 hour by default, and warn in red if the
-              limit is more than 5% worse than market. This demo does not place
-              a live order.
-            </p>
-          </div>
+          <LimitPanel
+            sell={sell}
+            buy={buy}
+            sellAmount={quote?.sellAmount ?? sellAmount}
+            midBuyAmount={quote?.midBuyAmount ?? null}
+            limitBuyInput={limitBuyInput}
+            onLimitBuyInput={(v) => {
+              setLimitTouched(true);
+              setLimitBuyInput(v);
+              setAckLimitWorse(false);
+            }}
+            ackWorse={ackLimitWorse}
+            onAckWorse={setAckLimitWorse}
+          />
         )}
 
         <label className="ack ack--inline">
@@ -404,10 +601,18 @@ export function SwapDemo({
           or AllowanceHolder, never Settler.
         </label>
 
-        {quote && !stale && (
+        {quote && !stale && !needsReReview && (
           <QuoteCard quote={quote} slippageBps={effectiveBps} />
         )}
-        {quote && stage === "review" && (
+        {quote && needsReReview && (
+          <PriceUpdateBanner
+            token={quote.buyToken}
+            previousBuyAmount={reviewedBuyAmount ?? quote.buyAmount}
+            nextBuyAmount={quote.buyAmount}
+            onReview={acceptUpdatedQuote}
+          />
+        )}
+        {quote && stage === "review" && !needsReReview && (
           <StaleQuote
             quotedAtMs={quote.quotedAtMs}
             ttlMs={ttlMs}
@@ -416,14 +621,29 @@ export function SwapDemo({
           />
         )}
 
-        {error && error.kind !== "empty" && error.kind !== "quote-expired" && (
+        {switchTo && (
+          <NetworkSwitch
+            walletChain={walletChain}
+            requiredChain={switchTo}
+            onSwitch={() => setWalletChain(switchTo)}
+          />
+        )}
+
+        {error &&
+          error.kind !== "empty" &&
+          error.kind !== "quote-expired" &&
+          error.kind !== "network-mismatch" &&
+          error.kind !== "price-updated" && (
           <ErrorState
             error={error}
             onAction={
               error.kind === "unverified-token"
                 ? () => setAckUnverified(true)
                 : error.kind === "fees-exceed-trade"
-                  ? () => setSellInput("25")
+                  ? () => {
+                      setSellInput("25");
+                      setLastEdited("pay");
+                    }
                   : undefined
             }
           />
@@ -442,10 +662,26 @@ export function SwapDemo({
           type="button"
           className="btn btn--primary btn--block"
           data-testid="primary-action"
-          disabled={primaryDisabled || stage === "progress"}
+          disabled={
+            (primaryDisabled && !switchTo) ||
+            stage === "progress" ||
+            (limit &&
+              parseUnits(limitBuyInput, buy.decimals) !== null &&
+              quote !== null &&
+              needsLimitAck(limitBuyInput, buy, quote.midBuyAmount) &&
+              !ackLimitWorse)
+          }
           onClick={() => {
             if (!connected) {
               setConnected(true);
+              return;
+            }
+            if (switchTo) {
+              setWalletChain(switchTo);
+              return;
+            }
+            if (needsReReview) {
+              acceptUpdatedQuote();
               return;
             }
             if (stage !== "review") {
@@ -457,7 +693,7 @@ export function SwapDemo({
         >
           {primaryLabel}
         </button>
-        {stage === "review" && !stale && (
+        {stage === "review" && !stale && !needsReReview && (
           <button
             type="button"
             className="btn btn--ghost btn--block"
@@ -473,4 +709,14 @@ export function SwapDemo({
       </div>
     </div>
   );
+}
+
+function needsLimitAck(
+  limitBuyInput: string,
+  buy: Token,
+  midBuyAmount: bigint,
+): boolean {
+  const parsed = parseUnits(limitBuyInput, buy.decimals);
+  if (parsed === null) return false;
+  return isLimitWorseThanMarket(parsed, midBuyAmount);
 }
