@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   DEFAULT_SLIPPAGE_BPS,
   autoSlippageBps,
@@ -35,6 +35,20 @@ export function SlippageControl({
   const auto = autoSlippageBps(band);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(formatBpsAsPercent(bps).replace("%", ""));
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+
+  function close() {
+    setOpen(false);
+    openerRef.current?.focus();
+  }
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) el.showModal();
+    if (!open && el.open) el.close();
+  }, [open]);
   const parsed = parseSlippageInput(draft);
   const shownBps = mode === "auto" ? auto.bps : bps;
   const warn = slippageNeedsWarn(shownBps) || (mode === "auto" && auto.warn);
@@ -54,22 +68,46 @@ export function SlippageControl({
       <button
         type="button"
         className="icon-btn"
+        ref={openerRef}
         aria-expanded={open}
+        aria-haspopup="dialog"
         aria-controls={headingId}
         aria-label={`Trade settings, max slippage ${formatBpsAsPercent(shownBps)}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         data-testid="slippage-toggle"
       >
         <SettingsIcon />
         <span className="icon-btn__meta">{formatBpsAsPercent(shownBps)}</span>
       </button>
-      {open && (
-        <div
+      {open ? (
+        <dialog
+          ref={dialogRef}
           className="slippage__panel"
           id={headingId}
-          role="region"
           aria-label="Trade settings"
+          onClose={close}
+          onCancel={(e) => {
+            e.preventDefault();
+            close();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            }
+          }}
         >
+          <div className="slippage__row">
+            <p className="slippage__label">Trade settings</p>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={close}
+              aria-label="Close trade settings"
+            >
+              ×
+            </button>
+          </div>
           <div className="slippage__row">
             <p className="slippage__label">Max slippage</p>
             <button
@@ -174,8 +212,8 @@ export function SlippageControl({
             Manual default is {formatBpsAsPercent(DEFAULT_SLIPPAGE_BPS)}. Gas
             is simulated as Fast in this demo.
           </p>
-        </div>
-      )}
+        </dialog>
+      ) : null}
     </div>
   );
 }

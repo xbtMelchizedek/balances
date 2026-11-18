@@ -1,3 +1,4 @@
+import { applyAdverseBps } from "./behavior";
 import { BPS_DENOMINATOR } from "./quoteMath";
 import { TOKENS, tokenById } from "./tokens";
 import type { Quote, RoutePlan, Token, TradeError } from "./types";
@@ -9,6 +10,8 @@ export type QuoteRequest = {
   firm: boolean;
   nowMs: number;
   ttlMs: number;
+  /** Demo-only haircut, in bps, applied after the all-in number. */
+  adverseBps?: bigint;
 };
 
 const RATES: Record<string, number> = {
@@ -193,6 +196,9 @@ export function getMockQuote(req: QuoteRequest): Quote {
   const network = dust * (req.firm ? 8n : 10n);
   let buyAmount = afterImpact - fee - network;
   if (buyAmount < 0n) buyAmount = 0n;
+  if (req.adverseBps && req.adverseBps > 0n) {
+    buyAmount = applyAdverseBps(buyAmount, req.adverseBps);
+  }
   const route = htlcRoute(req.sellToken, req.buyToken);
   if (!route) {
     throw new Error("No route");
@@ -215,6 +221,39 @@ export function getMockQuote(req: QuoteRequest): Quote {
 
 export function feesExceedTrade(quote: Quote): boolean {
   return quote.buyAmount <= 0n || quote.feeBuyAmount + quote.networkCostBuyAmount >= quote.midBuyAmount;
+}
+
+export type BuyTargetRequest = Omit<QuoteRequest, "sellAmount"> & {
+  targetBuyAmount: bigint;
+};
+
+/**
+ * Smallest pay-with amount whose all-in receive amount is at least the target.
+ * Fees and network cost are taken from the sell side of the quote, so this
+ * number can be larger than a naive mid-market inversion.
+ */
+export function sellAmountForBuyTarget(req: BuyTargetRequest): bigint | null {
+  if (req.targetBuyAmount <= 0n) return null;
+  const probe = quoteError({ ...req, sellAmount: 1n });
+  if (probe && probe.kind !== "empty") return null;
+
+  const fits = (sellAmount: bigint): boolean =>
+    getMockQuote({ ...req, sellAmount }).buyAmount >= req.targetBuyAmount;
+
+  let lo = 1n;
+  let hi = 1n;
+  for (let i = 0; i < 80; i++) {
+    if (fits(hi)) break;
+    hi *= 2n;
+    if (hi > 10n ** 36n) return null;
+  }
+  if (!fits(hi)) return null;
+  while (lo < hi) {
+    const mid = (lo + hi) / 2n;
+    if (fits(mid)) hi = mid;
+    else lo = mid + 1n;
+  }
+  return lo;
 }
 
 export { TOKENS, tokenById };

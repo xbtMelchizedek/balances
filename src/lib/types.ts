@@ -53,6 +53,9 @@ export type TradeErrorKind =
   | "quote-expired"
   | "high-impact"
   | "unverified-token"
+  | "network-mismatch"
+  | "price-updated"
+  | "limit-worse"
   | "unsupported";
 
 export type TradeError = {
