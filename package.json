@@ -1,0 +1,45 @@
+{
+  "name": "balances",
+  "private": false,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "A just balance and scales: a Matcha-grade demo swap UI kit. No wallet signing, no real transactions.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint src scripts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "secret-scan": "python3 scripts/secret_scan.py",
+    "screenshots": "python3 scripts/screenshots.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xbtMelchizedek/balances.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xbtMelchizedek/balances/issues"
+  },
+  "homepage": "https://github.com/xbtMelchizedek/balances#readme",
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.12",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^31.0.1",
+    "oxlint": "^1.90.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.1"
+  }
+}
